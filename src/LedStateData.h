@@ -10,8 +10,9 @@
 const int STATESIZE = 12;
 // three colors (RGB) in each substate
 const int STATEWIDTH = 3;
-const int LEDMODES = 5;
+const int LEDMODES = 3;
 const int DEVICEMODES = 6;
+const int FILTERMODES = 3;
 
 const int ALLSTATES[] = {
 // LEDMODE_OFF
@@ -19,55 +20,60 @@ const int ALLSTATES[] = {
     0, 0, 0,
     0, 0, 0,
     0, 0, 0,
-// LEDMODE_RGB
+// LEDMODE_TRAFFIC_LIGHT
+    255, 0, 0,
+    145, 105, 0,
     0, 255, 0,
+    2, 2, 2,
+// LEDMODE_IMPERIAL
+    255, 0, 0,
+    205, 205, 205,
     0, 0, 255,
-    255, 0, 0,
-    0, 0, 0,
-// LEDMODE_DESIGNER
-    255, 205, 0,
-    255, 0, 255,
-    0, 255, 255,
-    0, 0, 0,
-// LEDMODE_FRENCH
-    255, 0, 0,
-    255, 255, 255,
-    0, 0, 255,
-    0, 0, 0,
-// LEDMODE_AFRIKAN
-    255, 0, 0,
-    255, 205, 0,
-    0, 255, 0,
-    0, 0, 0,
+    2, 2, 2,
 // DEVICEMODE_DEFAULT_SLOW
-    255, 0, 0,
-    0, 0, 0,
-    0, 0, 0,
+    255, 3, 3,
+    3, 3, 3,
+    3, 3, 3,
     0, 0, 0,
 // DEVICEMODE_DEFAULT_MEDIUM
-    255, 0, 0,
-    255, 0, 0,
-    0, 0, 0,
+    255, 3, 3,
+    255, 3, 3,
+    3, 3, 3,
     0, 0, 0,
 // DEVICEMODE_DEFAULT_FAST
-    255, 0, 0,
-    255, 5, 5,
-    255, 5, 5,
+    255, 3, 3,
+    255, 3, 3,
+    255, 3, 3,
     0, 0, 0,
 // DEVICEMODE_BOTH_SLOW
-    0, 255, 0,
-    0, 0, 0,
-    0, 0, 0,
+    3, 255, 3,
+    3, 3, 3,
+    3, 3, 3,
     0, 0, 0,
 // DEVICEMODE_BOTH_MEDIUM
-    0, 255, 0,
-    5, 255, 5,
-    0, 0, 0,
+    3, 255, 3,
+    3, 255, 3,
+    3, 3, 3,
     0, 0, 0,
 // DEVICEMODE_BOTH_FAST
-    0, 255, 0,
-    5, 255, 5,
-    5, 255, 5,
+    3, 255, 3,
+    3, 255, 3,
+    3, 255, 3,
+    0, 0, 0,
+// FILTERMODE_WEAK
+    0, 0, 255,
+    0, 0, 0,
+    0, 0, 0,
+    0, 0, 0,
+// FILTERMODE_MEDIUM
+    0, 0, 255,
+    0, 0, 255,
+    0, 0, 0,
+    0, 0, 0,
+// FILTERMODE_STRONG
+    0, 0, 255,
+    0, 0, 255,
+    0, 0, 255,
     0, 0, 0,
 };
 

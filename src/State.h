@@ -4,15 +4,14 @@
 #include <Preferences.h>
 #include <Adafruit_NeoPixel.h>
 #include "LedStateData.h"
+#include "Logger.h"
 
 // Make sure that ALLSTATES array reflects this order!
 // Also update intToLedMode-function if changed!
 enum class LedMode {
   OFF = 0, // Turn LED off
-  RGB_DEFAULT = 1, // RGB
-  DESIGNER = 2, // CMY
-  FRENCH = 3, // RWB
-  AFRIKAN = 4, // RYG
+  TRAFFIC_LIGHT = 1, // RYG
+  IMPERIAL = 2, // RWB
 };
 
 // Update intToDeviceMode-function if changed!
@@ -25,10 +24,17 @@ enum class DeviceMode {
   BOTH_FAST = 5,
 };
 
+enum class FilterMode {
+  WEAK = 0,
+  MEDIUM = 1,
+  STRONG = 2,
+};
+
 enum class AnimationType {
   NONE = 0,
   HOLD = 1,
   FADE = 2,
+  FADE2 = 3,
 };
 
 class State {
@@ -47,15 +53,21 @@ class State {
         void showActiveDeviceMode();
         void setDeviceMode( DeviceMode newMode );
         void setDeviceSubMode( int newState );
+        void setPixels(uint8_t r, uint8_t g, uint8_t b);
+
+        FilterMode getFilterMode();
+        void showActiveFilterMode();
+        void setFilterMode( FilterMode newMode );
+        void setFilterSubMode( int newFilterMode );
     private:
         int _ledPin;
         int _numLeds;
         AnimationType currentAnimation;
         unsigned long animationStart;
         int STATE_DATA[STATESIZE];
-        void setPixels(uint8_t r, uint8_t g, uint8_t b);
         LedMode _activeLedMode;
         DeviceMode _activeDeviceMode;
+        FilterMode _activeFilterMode;
         int _activeSubState;
         float fadeBrightness;
         Adafruit_NeoPixel *pixels;
@@ -63,6 +75,7 @@ class State {
         LedMode previousLedState;
         LedMode intToLedMode( int state );
         DeviceMode intToDeviceMode( int state );
+        FilterMode intToFilterMode( int state );
         Preferences preferences;
 };
 

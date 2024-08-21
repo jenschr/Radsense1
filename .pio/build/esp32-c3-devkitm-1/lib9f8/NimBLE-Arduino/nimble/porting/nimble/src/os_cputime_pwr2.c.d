@@ -4,7 +4,7 @@
  .pio/libdeps/esp32-c3-devkitm-1/NimBLE-Arduino/src/nimble/porting/nimble/src/../include/os/../syscfg/syscfg.h \
  .pio/libdeps/esp32-c3-devkitm-1/NimBLE-Arduino/src/nimble/esp_port/port/include/esp_nimble_cfg.h \
  .pio/libdeps/esp32-c3-devkitm-1/NimBLE-Arduino/src/nimconfig.h \
- /Users/jensa/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32c3/qio_qspi/include/sdkconfig.h \
+ /Users/jensa/.platformio/packages/framework-arduinoespressif32@3.20009.0/tools/sdk/esp32c3/qio_qspi/include/sdkconfig.h \
  .pio/libdeps/esp32-c3-devkitm-1/NimBLE-Arduino/src/nimconfig_rename.h \
  .pio/libdeps/esp32-c3-devkitm-1/NimBLE-Arduino/src/nimble/porting/nimble/src/../include/os/../hal/hal_timer.h \
  .pio/libdeps/esp32-c3-devkitm-1/NimBLE-Arduino/src/nimble/porting/nimble/src/../include/os/../hal/../os/queue.h
