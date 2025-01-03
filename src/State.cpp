@@ -276,9 +276,9 @@ FilterMode State::getFilterMode()
   return _activeFilterMode;
 }
 
-void State::setPixels(uint8_t r, uint8_t g, uint8_t b)
+void State::setPixels(uint8_t r, uint8_t g, uint8_t b, uint8_t firstPixel, uint8_t numPixels)
 {
-  for(int i=0;i<_numLeds;i++)
+  for(int i=firstPixel;i<(firstPixel+numPixels);i++)
   {
     pixels->setPixelColor(i, r, g, b);
   }

@@ -13,16 +13,16 @@
 #define SERVICE_UUID        "b71eb828-6e9a-4db3-b11b-0ea799461a10"
 #define CHARACTERISTIC_UUID "825fdfcc-9771-11ee-b11b-0ea799461a10"
 
-#define FIRMWARE_VERSION 1.61
+#define FIRMWARE_VERSION 1.70
 #define RADAR_SERIAL Serial1
 #define WDT_TIMEOUT 60
 
 #define SCL_PIN 1
 #define SDA_PIN 0
-#define LED_PIN 2 // v1.6 = 2, v1.7 = 5
+#define LED_PIN 5 // v1.6 = 2, v1.7 = 5
 #define SETTINGS_PIN 8
 #define IN1_PIN 4
-#define IN2_PIN 5 // v1.6 = 5, v1.7 = 2
+#define IN2_PIN 2 // v1.6 = 5, v1.7 = 2
 #define RELAY_OUT1_PIN 6
 #define RELAY_OUT2_PIN 7
 #define NEOPIXEL_PIN 3
@@ -30,7 +30,7 @@
 #define RADAR_OUT_PIN 10
 #define RADAR_RX_PIN 21
 #define RADAR_TX_PIN 20
-#define NEOPIXEL_COUNT 6
+#define NEOPIXEL_COUNT 8
 
 WatchDogAbstraction wdt;
 
@@ -103,19 +103,36 @@ void setPresenceState( PresenceState newState ){
     switch( newState ){
       case PresenceState::CLOSE   : 
         digitalWrite(RELAY_OUT1_PIN, HIGH);
-        isStickyRelaysMode() ? digitalWrite(RELAY_OUT2_PIN, HIGH) : digitalWrite(RELAY_OUT2_PIN, LOW);
+        deviceState.setPixels(50,50,50,7,1);
+        
+        if( isStickyRelaysMode() ){
+          digitalWrite(RELAY_OUT2_PIN, HIGH);
+          deviceState.setPixels(50,50,50,6,1);
+        } else {
+          digitalWrite(RELAY_OUT2_PIN, LOW);
+          deviceState.setPixels(0,0,0,6,1);
+        }
+        
+        Logger::print(F("CLOSE!"));
         break;
       case PresenceState::NEAR    : 
         digitalWrite(RELAY_OUT1_PIN, LOW);
         digitalWrite(RELAY_OUT2_PIN, HIGH);
+        deviceState.setPixels(0,0,0,7,1);
+        deviceState.setPixels(50,50,50,6,1);
+        Logger::print(F("NEAR!"));
         break;
       case PresenceState::DISTANT :
         digitalWrite(RELAY_OUT1_PIN, LOW);
         digitalWrite(RELAY_OUT2_PIN, LOW);
+        deviceState.setPixels(0,0,0,6,2);
+        Logger::print(F("DISTANT!"));
         break;
       case PresenceState::NOTHING :
         digitalWrite(RELAY_OUT1_PIN, LOW);
         digitalWrite(RELAY_OUT2_PIN, LOW);
+        deviceState.setPixels(0,0,0,6,2);
+        Logger::print(F("NOTHING!"));
         break;
     }
     previousState = newState;
@@ -232,16 +249,26 @@ void updateFilter()
   }
 }
 
+void animateRgbLeds()
+{
+  while(1)
+  {
+    for(int i=0;i<NEOPIXEL_COUNT;i++)
+    {
+      deviceState.setPixels(0,0,0,0,NEOPIXEL_COUNT); // all off
+      deviceState.setPixels(100,0,0,i,1);
+      delay(250);
+    }
+  }
+}
+
 void setup(void)
 {
   deviceState.begin(NEOPIXEL_PIN, NEOPIXEL_COUNT);
-  delay(4100); // wait for Serial to initialize
-
   deviceState.setLedSubMode(0);
 
   Logger::begin();
-
-  Logger::print(F("\nRadSense1 firmware version "));
+  Logger::print(F("RadSense1 firmware version "));
   Logger::print(FIRMWARE_VERSION);
 
   setupOutputs();  
