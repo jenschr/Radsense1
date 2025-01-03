@@ -412,11 +412,11 @@ void sendBleDebug( int distance, int firstRange, int secondRange, int energy )
       int firstRangeIn = round((float)firstRange*0.393701);
       int secondRangeIn = round((float)secondRange*0.393701);
       int distanceIn = round((float)distance*0.393701);
-      sprintf(toSend, "Zone 1 %din, Zone 2 %din, Detect %din, e:%d", firstRangeIn,secondRangeIn,distanceIn, energy);
+      sprintf(toSend, "Zone1 %din, Zone2 %din, Detect %din, e:%d", firstRangeIn,secondRangeIn,distanceIn, energy);
     }
     else
     {
-      sprintf(toSend, "Zone 1 %dcm, Zone 2 %dcm, Detect %dcm, e:%d", firstRange,secondRange,distance, energy);
+      sprintf(toSend, "Zone1 %dcm, Zone2 %dcm, \nDetect %dcm, e:%d", firstRange,secondRange,distance, energy);
     }
     pCharacteristic->setValue(toSend);
     pCharacteristic->notify();
