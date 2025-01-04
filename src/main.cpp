@@ -12,6 +12,7 @@
 
 #define SERVICE_UUID        "b71eb828-6e9a-4db3-b11b-0ea799461a10"
 #define CHARACTERISTIC_UUID "825fdfcc-9771-11ee-b11b-0ea799461a10"
+#define CHARACTERISTIC_UUID2 "825fdfcc-9771-11ee-b11b-0ea799461a11"
 
 #define FIRMWARE_VERSION 1.70
 #define RADAR_SERIAL Serial1
@@ -32,6 +33,8 @@
 #define RADAR_TX_PIN 20
 #define NEOPIXEL_COUNT 8
 
+#define MM_TO_IN 0.393701
+
 WatchDogAbstraction wdt;
 
 enum class PresenceState {
@@ -49,7 +52,8 @@ State deviceState;
 
 // BLE
 BLEServer* pServer = NULL;
-BLECharacteristic* pCharacteristic = NULL;
+BLECharacteristic* pCharacteristicDebug = NULL;
+BLECharacteristic* pCharacteristicSettings = NULL;
 bool deviceConnected = false;
 bool oldDeviceConnected = false;
 bool bleOutputEnabled = false;
@@ -68,8 +72,9 @@ int minDistance = 30;
 int maxDistance = 330;
 int firstRange;
 int secondRange;
-int distance;
+int lastDistanceDetected;
 int minEnergy = 20; // 20 is default
+int uniqueSamplesPerMinute = 0;
 
 // Potmeter adjustment
 int analogValue1 = 0;
@@ -183,8 +188,13 @@ void setupBluetooth()
   BLEService *pService = pServer->createService(SERVICE_UUID);
   
   // Create a BLE Characteristic
-  pCharacteristic = pService->createCharacteristic(
+  pCharacteristicDebug = pService->createCharacteristic(
                       CHARACTERISTIC_UUID,
+                      NIMBLE_PROPERTY::NOTIFY
+                    );
+
+  pCharacteristicSettings = pService->createCharacteristic(
+                      CHARACTERISTIC_UUID2,
                       NIMBLE_PROPERTY::NOTIFY
                     );
 
@@ -224,16 +234,20 @@ void updateBluetoothTurnoffTime()
   }
 }
 
+/*
+When reading the sensor every 30ms, we'll get 30 samples per second.
+This 
+*/
 void updateSampleSpeed()
 {
   switch( deviceState.getDeviceMode() )
   {
     case DeviceMode::DEFAULT_SLOW :    requiredConsecutiveReads = 60; break;
     case DeviceMode::DEFAULT_MEDIUM :  requiredConsecutiveReads = 30; break;
-    case DeviceMode::DEFAULT_FAST :    requiredConsecutiveReads = 15; break;
+    case DeviceMode::DEFAULT_FAST :    requiredConsecutiveReads = 10; break;
     case DeviceMode::BOTH_SLOW :       requiredConsecutiveReads = 60; break;
     case DeviceMode::BOTH_MEDIUM :     requiredConsecutiveReads = 30; break;
-    case DeviceMode::BOTH_FAST :       requiredConsecutiveReads = 15; break;
+    case DeviceMode::BOTH_FAST :       requiredConsecutiveReads = 10; break;
     default : requiredConsecutiveReads = 60; break;
   }
 }
@@ -242,10 +256,10 @@ void updateFilter()
 {
   switch( deviceState.getFilterMode() )
   {
-    case FilterMode::WEAK :            minEnergy = 35; break;
-    case FilterMode::MEDIUM :          minEnergy = 60; break;
+    case FilterMode::WEAK :            minEnergy = 60; break;
+    case FilterMode::MEDIUM :          minEnergy = 85; break;
     case FilterMode::STRONG :          minEnergy = 98; break;
-    default : minEnergy = 20; break;
+    default : minEnergy = 60; break;
   }
 }
 
@@ -362,6 +376,7 @@ void deleteOneFromAllBins()
     readings[3] = readings[3]-1;
   }
 }
+
 void debugOutput( int distance, int energy )
 {
   return;
@@ -400,7 +415,7 @@ void updateTheBins( int distance, int firstRange, int secondRange )
   }
 }
 
-void sendBleDebug( int distance, int firstRange, int secondRange, int energy )
+void sendBleDebug( int distance, int firstRange, int secondRange, int energy, unsigned long now )
 {
   // notify of changed value
   if (deviceConnected) {
@@ -409,20 +424,36 @@ void sendBleDebug( int distance, int firstRange, int secondRange, int energy )
     char toSend[100];
     if( deviceState.getLedMode() == LedMode::IMPERIAL )
     {
-      int firstRangeIn = round((float)firstRange*0.393701);
-      int secondRangeIn = round((float)secondRange*0.393701);
-      int distanceIn = round((float)distance*0.393701);
-      sprintf(toSend, "Zone1 %din, Zone2 %din, Detect %din, e:%d", firstRangeIn,secondRangeIn,distanceIn, energy);
+      int firstRangeIn = round((float)firstRange * MM_TO_IN);
+      int secondRangeIn = round((float)secondRange * MM_TO_IN);
+      int distanceIn = round((float)distance * MM_TO_IN);
+      sprintf(toSend, "Zone1 %din, Zone2 %din, \nDetect %din, e:%d", firstRangeIn,secondRangeIn,distanceIn, energy);
     }
     else
     {
-      sprintf(toSend, "Zone1 %dcm, Zone2 %dcm, \nDetect %dcm, e:%d", firstRange,secondRange,distance, energy);
+      sprintf(toSend, "Zone1 %dcm, Zone2 %dcm, \nDetect %dcm, e:%d, u:%i", firstRange,secondRange,distance, energy, uniqueSamplesPerMinute);
     }
-    pCharacteristic->setValue(toSend);
-    pCharacteristic->notify();
+    pCharacteristicDebug->setValue(toSend);
+    pCharacteristicDebug->notify();
     // bluetooth stack will go into congestion, if too many packets are sent,
     // but as long as the loop takes more than 3ms, we don't need more delay
     //delay(50);
+
+    // Once in a while, we'll also send out the current device settings as a
+    // different characteristic
+    if( now-1000 < lastSettingsPress){
+      char toSendSettings[100];
+      char deviceMode[20];
+      deviceState.getDeviceModeAsString(deviceMode);
+      char ledMode[20];
+      deviceState.getLedModeAsString(ledMode);
+      char filterMode[20];
+      deviceState.getFilterModeAsString(filterMode);
+      sprintf(toSendSettings, "Device: %s\nLed: %s\nFilter: %s", deviceMode, ledMode, filterMode);
+      pCharacteristicSettings->setValue(toSendSettings);
+      pCharacteristicSettings->notify();
+    }
+    
   }
   // disconnecting
   if (!deviceConnected && oldDeviceConnected) {
@@ -461,7 +492,7 @@ void gotoNextLedMode()
   switch( deviceState.getLedMode() )
   {
     case LedMode::TRAFFIC_LIGHT: deviceState.setLedMode( LedMode::IMPERIAL ); break;
-    case LedMode::IMPERIAL:      deviceState.setLedMode( LedMode::OFF ); break;
+    case LedMode::IMPERIAL:      deviceState.setLedMode( LedMode::OFF ); deviceState.setPixels(0,0,0,0,NEOPIXEL_COUNT); break;
     case LedMode::OFF:           deviceState.setLedMode( LedMode::TRAFFIC_LIGHT ); break;
     default: deviceState.setLedMode( LedMode::TRAFFIC_LIGHT ); break;
   }
@@ -585,39 +616,125 @@ void handleInteraction( unsigned long now )
   }
 }
 
-void readTheRadar()
+int lastSecondSampled = 0;
+int sampleCountPerSecond = 0;
+const int numSamplesInBuffer = 60;
+int sampleBufferMinute[60];
+int sampleBufferSeconds[numSamplesInBuffer];
+int uniqueSamples[numSamplesInBuffer];
+
+int findUniqueSamplesPerMinute( unsigned long int time, int currentValue )
+{
+  // Always maintain and average the samples
+  if( sampleCountPerSecond < numSamplesInBuffer && currentValue < firstRange) // prevent exceeding the buffer
+  {
+    sampleBufferSeconds[sampleCountPerSecond] = currentValue;
+    sampleCountPerSecond++;
+  }
+  
+  // Update value only when the second is changing
+  int currentSecond = time/1000;
+  int currentSecondInMinute = currentSecond%60;
+  int uniqueSampleIndex = 0;
+  if( currentSecond != lastSecondSampled )
+  {
+    // Loop through all samples
+    for(int sampleNumber=0;sampleNumber<numSamplesInBuffer;sampleNumber++)
+    {
+      // Read each sample
+      int sampleToTest = sampleBufferSeconds[sampleNumber];
+
+      // Check if already in collection
+      bool valueAlreadyInCollection = false;
+      for(int i=0;i<uniqueSampleIndex;i++)
+      {
+        if(uniqueSamples[i] == sampleToTest)
+        {
+          valueAlreadyInCollection = true;
+        }
+      }
+
+      // if not already in collection, add it
+      if( !valueAlreadyInCollection )
+      {
+        uniqueSamples[uniqueSampleIndex] = sampleToTest;
+        uniqueSampleIndex++;
+      }
+    }
+
+    // Less than 2 values is not useful, so just remove
+    if( uniqueSampleIndex < 3 ) { uniqueSampleIndex = 0; }
+
+    // Output the result
+    Logger::print(F("uniqueSamplesPerMinute: "));
+    Logger::print(uniqueSamplesPerMinute);
+    Logger::print(F("uniqueSamplesPerSeconds: "));
+    Logger::print(uniqueSampleIndex);
+    sampleBufferMinute[currentSecondInMinute] = uniqueSampleIndex;
+
+    // Find changes per minutes
+    int total = 0;
+    for(int i=0;i<60;i++)
+    {
+      total += sampleBufferMinute[i];
+    }
+    uniqueSamplesPerMinute = total;
+
+    // Reset the buffers
+    for(int i=0;i<numSamplesInBuffer;i++)
+    {
+      sampleBufferSeconds[i] = 0;
+      uniqueSamples[i] = 0;
+      uniqueSampleIndex = 0;
+    }
+
+    // Update before next loop
+    lastSecondSampled = currentSecond;
+    sampleCountPerSecond = 0;
+  }
+  return 0;
+}
+
+void readTheRadar( unsigned long now )
 {
   bool wasRead = radar.read();
   digitalWrite(LED_PIN, wasRead); // Blink LED for debug
 
   int energy = radar.stationaryTargetEnergy();
-  if(radar.isConnected() && millis() - lastReading > msBetweenReads && energy >= minEnergy)  //Report every 1000ms
+  int distanceToSave = 0;
+  if(radar.isConnected() && now - lastReading > msBetweenReads && energy >= minEnergy)  //Report every 1000ms
   {
-    lastReading = millis();
+    lastReading = now;
     deleteOneFromAllBins();
 
     if( radar.presenceDetected() || radar.movingTargetDetected() )
     {
-      distance = radar.stationaryTargetDistance()-minDistance;
+      lastDistanceDetected = radar.stationaryTargetDistance()-minDistance;
+      distanceToSave = lastDistanceDetected;
     }
     else
     {
-      distance = 500;
+      distanceToSave = 500;
     }
 
     // Select where to put the new sample
-    updateTheBins( distance, firstRange, secondRange );
-    sendBleDebug( distance, firstRange, secondRange, energy );
-    debugOutput(distance, energy);
+    updateTheBins( distanceToSave, firstRange, secondRange );
+    sendBleDebug( distanceToSave, firstRange, secondRange, energy, now );
+    debugOutput( distanceToSave, energy);
+    if( radar.stationaryTargetEnergy() >= 98)
+    {
+      findUniqueSamplesPerMinute( now, lastDistanceDetected );
+    }
   }
-  else if( millis() - lastReading > msBetweenReads ) // No radar, but time to update?
+  else if( now - lastReading > msBetweenReads ) // No radar, but time to update?
   {
     deleteOneFromAllBins();
-    distance = 500;
-    updateTheBins( distance, firstRange, secondRange );
-    sendBleDebug( distance, firstRange, secondRange, energy );
-    lastReading = millis();
-    debugOutput(distance, energy);
+    distanceToSave = 500;
+    updateTheBins( distanceToSave, firstRange, secondRange );
+    sendBleDebug( distanceToSave, firstRange, secondRange, energy, now );
+    lastReading = now;
+    debugOutput(distanceToSave, energy);
+    findUniqueSamplesPerMinute( now, lastDistanceDetected );
   }
 }
 
@@ -638,7 +755,7 @@ void loop()
   handleInteraction( now );
   
   // Handle BLE connection
-  if(bleOutputEnabled && millis() > turnBluetoothOffAt && !deviceConnected)
+  if(bleOutputEnabled && now > turnBluetoothOffAt && !deviceConnected)
   {
     bleOutputEnabled = false;
     BLEDevice::stopAdvertising();
@@ -653,9 +770,9 @@ void loop()
   float total = percentage1 + percentage2;
   firstRange = minDistance+((maxDistance-minDistance)*percentage1);
   secondRange = firstRange+ ((maxDistance-firstRange)*percentage2);
-  distance = 500;
+  lastDistanceDetected = 500;
   
-  readTheRadar();
+  readTheRadar( now );
 
   // Color & relay output
   if( readings[0] >= requiredConsecutiveReads ){
@@ -664,7 +781,7 @@ void loop()
     setPresenceState(PresenceState::NEAR);
   } else if(readings[2] >= requiredConsecutiveReads){
     setPresenceState(PresenceState::DISTANT);
-  } else if(readings[3] >= requiredConsecutiveReads){
+  } else if(readings[3] >= requiredConsecutiveReads || uniqueSamplesPerMinute <= 5){
     setPresenceState(PresenceState::NOTHING);
   }
 

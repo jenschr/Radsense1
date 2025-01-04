@@ -25,7 +25,7 @@ void State::begin(int ledPin, int numLeds)
   Logger::print(F("savedDeviceMode "));
   Logger::print(savedDeviceMode);
 
-  unsigned int savedFilterMode = preferences.getUInt("FilterMode", 0);
+  unsigned int savedFilterMode = preferences.getUInt("FilterMode", 2);
   setFilterMode( intToFilterMode(savedFilterMode) );
   Logger::print(F("savedFilterMode "));
   Logger::print(savedFilterMode);
@@ -148,6 +148,17 @@ LedMode State::getLedMode()
   return _activeLedMode;
 }
 
+void State::getLedModeAsString( char * mode )
+{
+  switch (_activeLedMode)
+  {
+    case LedMode::OFF : sprintf(mode,"OFF"); break;
+    case LedMode::TRAFFIC_LIGHT: sprintf(mode,"Traffic light"); break;
+    case LedMode::IMPERIAL: sprintf(mode,"Imperial"); break;
+    default: sprintf(mode,"Unknown"); break;
+  }
+}
+
 // Device modes handle how the device works
 
 void State::showActiveDeviceMode()
@@ -213,6 +224,20 @@ DeviceMode State::getDeviceMode()
   return _activeDeviceMode;
 }
 
+void State::getDeviceModeAsString( char * mode )
+{
+  switch (_activeDeviceMode)
+  {
+    case DeviceMode::DEFAULT_SLOW: sprintf(mode,"Slow"); break;
+    case DeviceMode::DEFAULT_MEDIUM: sprintf(mode,"Medium"); break;
+    case DeviceMode::DEFAULT_FAST: sprintf(mode,"Fast"); break;
+    case DeviceMode::BOTH_SLOW: sprintf(mode,"Slow+Sticky"); break;
+    case DeviceMode::BOTH_MEDIUM: sprintf(mode,"Medium+Sticky"); break;
+    case DeviceMode::BOTH_FAST: sprintf(mode,"Fast+Sticky"); break;
+    default: sprintf(mode,"Unknown"); break;
+  }
+}
+
 void State::showActiveFilterMode()
 {
   Logger::print(F("DeviceMode::showActiveFilterMode "));
@@ -274,6 +299,17 @@ void State::setFilterSubMode( int newFilterMode )
 FilterMode State::getFilterMode()
 {
   return _activeFilterMode;
+}
+
+void State::getFilterModeAsString( char * mode )
+{
+  switch (_activeFilterMode)
+  {
+    case FilterMode::WEAK : sprintf(mode,"Weak"); break;
+    case FilterMode::MEDIUM: sprintf(mode,"Medium"); break;
+    case FilterMode::STRONG: sprintf(mode,"Strong"); break;
+    default: sprintf(mode,"Unknown"); break;
+  }
 }
 
 void State::setPixels(uint8_t r, uint8_t g, uint8_t b, uint8_t firstPixel, uint8_t numPixels)

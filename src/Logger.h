@@ -4,7 +4,7 @@
 #include "Arduino.h"
 
 // Uncomment to view debug output
-// #define USE_LOGGER 
+#define USE_LOGGER
 
 class Logger {
     public:
