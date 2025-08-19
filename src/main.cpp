@@ -1,5 +1,3 @@
-// Drop by https://github.com/ncmreynolds/ld2410
-// once in a while to help with issues
 
 #include <Arduino.h>
 #include <Wire.h>
@@ -14,7 +12,7 @@
 #define CHARACTERISTIC_UUID "825fdfcc-9771-11ee-b11b-0ea799461a10"
 #define CHARACTERISTIC_UUID2 "825fdfcc-9771-11ee-b11b-0ea799461a11"
 
-#define FIRMWARE_VERSION 1.70
+#define FIRMWARE_VERSION 1.71
 #define RADAR_SERIAL Serial1
 #define WDT_TIMEOUT 60
 
@@ -75,6 +73,7 @@ int secondRange;
 int lastDistanceDetected;
 int minEnergy = 20; // 20 is default
 int uniqueSamplesPerMinute = 0;
+int uniqueSamplesPerSecond = 0;
 
 // Potmeter adjustment
 int analogValue1 = 0;
@@ -86,6 +85,8 @@ int analogValueOld2 = 0;
 bool wasSettingsPressed = false;
 unsigned long now = 0;
 unsigned long lastSettingsPress = 0;
+unsigned long nextDebugOutput = 0;
+unsigned long nextSettingsOutput = 0;
 int timeSinceLastPress = 0;
 int timeSinceLastRelease = 0;
 int lastDoublePress = 0;
@@ -93,6 +94,19 @@ bool clickDetected;
 bool singleClickDetected;
 bool doubleClickDetected;
 bool doubleClickFastDetected;
+
+// Averages
+int lastSecondSampled = 0;
+int sampleBuffer[600];              // This is the maximum number of samples we can analyze
+int sampleBufferMaxPosition = 100;  // What is the longest into the buffer we want to analyze
+int sampleIndex = 0;                // Holds our current position in the buffer
+int uniqueSampleCount = 0;
+
+int sampleCountPerSecond = 0;
+const int numSamplesInBuffer = 60;        // The buffer is always 60, but we might not use all of it
+int sampleBufferMinute[numSamplesInBuffer];
+int sampleBufferSeconds[numSamplesInBuffer];
+int uniqueSamples[numSamplesInBuffer];
 
 bool isStickyRelaysMode()
 {
@@ -236,7 +250,10 @@ void updateBluetoothTurnoffTime()
 
 /*
 When reading the sensor every 30ms, we'll get 30 samples per second.
-This 
+There is a limit to how fast you can read the sensor, so there is
+a tradeoff between speed and precision:
+- The more samples, the higher certainty of the positioning.
+- The less samples, the faster switching.
 */
 void updateSampleSpeed()
 {
@@ -244,10 +261,10 @@ void updateSampleSpeed()
   {
     case DeviceMode::DEFAULT_SLOW :    requiredConsecutiveReads = 60; break;
     case DeviceMode::DEFAULT_MEDIUM :  requiredConsecutiveReads = 30; break;
-    case DeviceMode::DEFAULT_FAST :    requiredConsecutiveReads = 10; break;
+    case DeviceMode::DEFAULT_FAST :    requiredConsecutiveReads = 15; break;
     case DeviceMode::BOTH_SLOW :       requiredConsecutiveReads = 60; break;
     case DeviceMode::BOTH_MEDIUM :     requiredConsecutiveReads = 30; break;
-    case DeviceMode::BOTH_FAST :       requiredConsecutiveReads = 10; break;
+    case DeviceMode::BOTH_FAST :       requiredConsecutiveReads = 15; break;
     default : requiredConsecutiveReads = 60; break;
   }
 }
@@ -285,7 +302,7 @@ void setup(void)
   Logger::print(F("RadSense1 firmware version "));
   Logger::print(FIRMWARE_VERSION);
 
-  setupOutputs();  
+  setupOutputs();
   Wire.begin(SDA_PIN,SCL_PIN);
 
   // After prefs are read, we can re-set the update frequency
@@ -393,18 +410,18 @@ void debugOutput( int distance, int energy )
   Logger::print(energy);
 }
 
-void updateTheBins( int distance, int firstRange, int secondRange )
+void updateTheBins( int distance, int firstRange, int secondRange, int energy )
 {
   // Select where to put the new sample
-  if( distance < firstRange ){
+  if( distance < firstRange && energy > minEnergy ){
     if( readings[0]<requiredConsecutiveReads ){
       readings[0] = readings[0]+2;
     }
-  } else if(distance < secondRange){
+  } else if(distance < secondRange && energy > minEnergy){
     if( readings[1]<requiredConsecutiveReads ){
       readings[1] = readings[1]+2;
     }
-  } else if(distance < maxDistance){
+  } else if(distance < maxDistance && energy > minEnergy){
     if( readings[2]<requiredConsecutiveReads ){
       readings[2] = readings[2]+2;
     }
@@ -420,28 +437,30 @@ void sendBleDebug( int distance, int firstRange, int secondRange, int energy, un
   // notify of changed value
   if (deviceConnected) {
     updateBluetoothTurnoffTime();
-    const int bleStringLength = BLEDevice::getMTU();
-    char toSend[100];
-    if( deviceState.getLedMode() == LedMode::IMPERIAL )
-    {
-      int firstRangeIn = round((float)firstRange * MM_TO_IN);
-      int secondRangeIn = round((float)secondRange * MM_TO_IN);
-      int distanceIn = round((float)distance * MM_TO_IN);
-      sprintf(toSend, "Zone1 %din, Zone2 %din, \nDetect %din, e:%d", firstRangeIn,secondRangeIn,distanceIn, energy);
+    // up to 10 times per second, we'll send out the current data
+    if( now > nextDebugOutput){
+      nextDebugOutput += 100;
+      const int bleStringLength = BLEDevice::getMTU();
+      char toSend[100];
+      if( deviceState.getLedMode() == LedMode::IMPERIAL )
+      {
+        int firstRangeIn = round((float)firstRange * MM_TO_IN);
+        int secondRangeIn = round((float)secondRange * MM_TO_IN);
+        int distanceIn = round((float)distance * MM_TO_IN);
+        sprintf(toSend, "Zone1 %din, Zone2 %din, \nDetect %din, e:%d", firstRangeIn,secondRangeIn,distanceIn, energy);
+      }
+      else
+      {
+        sprintf(toSend, "Zone1 %dcm, Zone2 %dcm, \nDetect %dcm, e:%d", firstRange,secondRange,distance, energy);
+      }
+      pCharacteristicDebug->setValue(toSend);
+      pCharacteristicDebug->notify();
     }
-    else
-    {
-      sprintf(toSend, "Zone1 %dcm, Zone2 %dcm, \nDetect %dcm, e:%d, u:%i", firstRange,secondRange,distance, energy, uniqueSamplesPerMinute);
-    }
-    pCharacteristicDebug->setValue(toSend);
-    pCharacteristicDebug->notify();
-    // bluetooth stack will go into congestion, if too many packets are sent,
-    // but as long as the loop takes more than 3ms, we don't need more delay
-    //delay(50);
 
-    // Once in a while, we'll also send out the current device settings as a
+    // Once every second, we'll also send out the current device settings as a
     // different characteristic
-    if( now-1000 < lastSettingsPress){
+    if( now > nextSettingsOutput){
+      nextSettingsOutput += 1000;
       char toSendSettings[100];
       char deviceMode[20];
       deviceState.getDeviceModeAsString(deviceMode);
@@ -449,7 +468,7 @@ void sendBleDebug( int distance, int firstRange, int secondRange, int energy, un
       deviceState.getLedModeAsString(ledMode);
       char filterMode[20];
       deviceState.getFilterModeAsString(filterMode);
-      sprintf(toSendSettings, "Device: %s\nLed: %s\nFilter: %s", deviceMode, ledMode, filterMode);
+      sprintf(toSendSettings, "Device: %s\nLed: %s\nFilter: %s\nDetected: %d\nPerSecond: %d\nPerMinute: %d", deviceMode, ledMode, filterMode, previousState, uniqueSamplesPerSecond, uniqueSamplesPerMinute);
       pCharacteristicSettings->setValue(toSendSettings);
       pCharacteristicSettings->notify();
     }
@@ -616,17 +635,68 @@ void handleInteraction( unsigned long now )
   }
 }
 
-int lastSecondSampled = 0;
-int sampleCountPerSecond = 0;
-const int numSamplesInBuffer = 60;
-int sampleBufferMinute[60];
-int sampleBufferSeconds[numSamplesInBuffer];
-int uniqueSamples[numSamplesInBuffer];
+// Second attempt that removes the minute-buffer and only looks at the previous sample
+int countUniqueSamples( unsigned long int time, int currentValue )
+{
+  // TODO: evaluate if we need to drop samples beyond max. we likely do
 
+  // Always save the sample
+  sampleBuffer[sampleIndex] = currentValue;
+
+  // Make sure we don't overrun the buffer on next iteration
+  if( sampleIndex >= (sampleBufferMaxPosition-1) ){
+    sampleIndex=0;
+  } else {
+    sampleIndex++;
+  }
+  
+  // Update value only once per second
+  int currentSecond = time/1000;
+  if( currentSecond != lastSecondSampled )
+  {
+    // Loop through all samples
+    for(int sampleNumber=0;sampleNumber<(sampleBufferMaxPosition-1);sampleNumber++)
+    {
+      // Compare each sample
+      int firstSample = sampleBufferSeconds[sampleNumber];
+      int secondSample = sampleBufferSeconds[sampleNumber+1];
+      if(firstSample != secondSample)
+      {
+        uniqueSampleCount++;
+      }
+    }
+
+    // Less than 2 values is not useful, so just remove
+    if( uniqueSampleCount < 3 ) { uniqueSampleCount = 0; }
+
+    // Output the result
+    Logger::print(F("uniqueSampleCount: "));
+    Logger::print(uniqueSampleCount);
+    
+    // Update before next loop
+    lastSecondSampled = currentSecond;
+    sampleCountPerSecond = 0;
+  }
+  return uniqueSampleCount;
+}
+
+/* The radar obviously cannot detect someone that isn't there, so as
+long as any samples are different from the previous one's, we're
+counting them using the uniqueSamplesPerMinute variable.
+
+If nobody is present, we are not getting new samples so the value 
+will go down. This means that turning off might take some seconds
+(20-60 based on speed setting). 
+
+The below method clearly overcomplicates things by dividing into two
+buffers, but it's very solid in terms of detecting. Changing zones
+will still be very fast, so it's only in the case of someone
+"disappearing" that this is used.
+*/
 int findUniqueSamplesPerMinute( unsigned long int time, int currentValue )
 {
   // Always maintain and average the samples
-  if( sampleCountPerSecond < numSamplesInBuffer && currentValue < firstRange) // prevent exceeding the buffer
+  if( sampleCountPerSecond < (requiredConsecutiveReads/2) && currentValue < firstRange) // prevent exceeding the buffer
   {
     sampleBufferSeconds[sampleCountPerSecond] = currentValue;
     sampleCountPerSecond++;
@@ -634,19 +704,19 @@ int findUniqueSamplesPerMinute( unsigned long int time, int currentValue )
   
   // Update value only when the second is changing
   int currentSecond = time/1000;
-  int currentSecondInMinute = currentSecond%60;
-  int uniqueSampleIndex = 0;
+  int currentSecondInMinute = currentSecond%requiredConsecutiveReads;
+  uniqueSamplesPerSecond = 0;
   if( currentSecond != lastSecondSampled )
   {
     // Loop through all samples
-    for(int sampleNumber=0;sampleNumber<numSamplesInBuffer;sampleNumber++)
+    for(int sampleNumber=0;sampleNumber<requiredConsecutiveReads;sampleNumber++)
     {
       // Read each sample
       int sampleToTest = sampleBufferSeconds[sampleNumber];
 
       // Check if already in collection
       bool valueAlreadyInCollection = false;
-      for(int i=0;i<uniqueSampleIndex;i++)
+      for(int i=0;i<uniqueSamplesPerSecond;i++)
       {
         if(uniqueSamples[i] == sampleToTest)
         {
@@ -657,35 +727,35 @@ int findUniqueSamplesPerMinute( unsigned long int time, int currentValue )
       // if not already in collection, add it
       if( !valueAlreadyInCollection )
       {
-        uniqueSamples[uniqueSampleIndex] = sampleToTest;
-        uniqueSampleIndex++;
+        uniqueSamples[uniqueSamplesPerSecond] = sampleToTest;
+        uniqueSamplesPerSecond++;
       }
     }
 
-    // Less than 2 values is not useful, so just remove
-    if( uniqueSampleIndex < 3 ) { uniqueSampleIndex = 0; }
+    // If we're not detecting anything, there's no need to count unique samples
+    // This solves a bug that might cause a non-detect period on initial detect
+    // and also improves response time.
+    if( previousState == PresenceState::NOTHING && uniqueSamplesPerSecond > 1 ){
+      uniqueSamplesPerSecond = 0;
+    }
 
-    // Output the result
-    Logger::print(F("uniqueSamplesPerMinute: "));
-    Logger::print(uniqueSamplesPerMinute);
-    Logger::print(F("uniqueSamplesPerSeconds: "));
-    Logger::print(uniqueSampleIndex);
-    sampleBufferMinute[currentSecondInMinute] = uniqueSampleIndex;
+    // Less than 2 values is not useful, so just remove
+    if( uniqueSamplesPerSecond < 3 ) { uniqueSamplesPerSecond = 0; }
+    sampleBufferMinute[currentSecondInMinute] = uniqueSamplesPerSecond;
 
     // Find changes per minutes
     int total = 0;
-    for(int i=0;i<60;i++)
+    for(int i=0;i<requiredConsecutiveReads;i++)
     {
       total += sampleBufferMinute[i];
     }
     uniqueSamplesPerMinute = total;
 
     // Reset the buffers
-    for(int i=0;i<numSamplesInBuffer;i++)
+    for(int i=0;i<requiredConsecutiveReads;i++)
     {
       sampleBufferSeconds[i] = 0;
       uniqueSamples[i] = 0;
-      uniqueSampleIndex = 0;
     }
 
     // Update before next loop
@@ -698,7 +768,9 @@ int findUniqueSamplesPerMinute( unsigned long int time, int currentValue )
 void readTheRadar( unsigned long now )
 {
   bool wasRead = radar.read();
-  digitalWrite(LED_PIN, wasRead); // Blink LED for debug
+  if(deviceState.getLedMode() != LedMode::OFF){
+    digitalWrite(LED_PIN, wasRead); // Blink LED for debug
+  }
 
   int energy = radar.stationaryTargetEnergy();
   int distanceToSave = 0;
@@ -718,23 +790,25 @@ void readTheRadar( unsigned long now )
     }
 
     // Select where to put the new sample
-    updateTheBins( distanceToSave, firstRange, secondRange );
+    updateTheBins( distanceToSave, firstRange, secondRange, energy );
     sendBleDebug( distanceToSave, firstRange, secondRange, energy, now );
     debugOutput( distanceToSave, energy);
     if( radar.stationaryTargetEnergy() >= 98)
     {
       findUniqueSamplesPerMinute( now, lastDistanceDetected );
+      countUniqueSamples( now, lastDistanceDetected );
     }
   }
   else if( now - lastReading > msBetweenReads ) // No radar, but time to update?
   {
     deleteOneFromAllBins();
     distanceToSave = 500;
-    updateTheBins( distanceToSave, firstRange, secondRange );
+    updateTheBins( distanceToSave, firstRange, secondRange, energy );
     sendBleDebug( distanceToSave, firstRange, secondRange, energy, now );
     lastReading = now;
     debugOutput(distanceToSave, energy);
     findUniqueSamplesPerMinute( now, lastDistanceDetected );
+    countUniqueSamples( now, lastDistanceDetected );
   }
 }
 
@@ -781,9 +855,15 @@ void loop()
     setPresenceState(PresenceState::NEAR);
   } else if(readings[2] >= requiredConsecutiveReads){
     setPresenceState(PresenceState::DISTANT);
-  } else if(readings[3] >= requiredConsecutiveReads || uniqueSamplesPerMinute <= 5){
+  } else if(readings[3] >= requiredConsecutiveReads && uniqueSamplesPerMinute <= 5){
     setPresenceState(PresenceState::NOTHING);
   }
+
+  // TODO: 
+  // - Do not decrement uniqueSamples if Energy is 100%!
+  // - Make the pool of uniqueSamples a single pool
+  // - adjust the size of this pool with the filter
+  // - Decrease the required energy level for lowest setting (as it was)
 
   // Maintain the watchdog
   wdt.reset();
