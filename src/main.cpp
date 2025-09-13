@@ -712,7 +712,7 @@ counting them using the uniqueSamplesPerMinute variable.
 
 If nobody is present, we are not getting new samples so the value 
 will go down. This means that turning off might take some seconds
-(20-60 based on speed setting). 
+(20-60 based on speed setting).
 
 The below method clearly overcomplicates things by dividing into two
 buffers, but it's very solid in terms of detecting. Changing zones
@@ -884,12 +884,6 @@ void loop()
   } else if(readings[3] >= requiredConsecutiveReads && uniqueSamplesPerMinute <= 5){
     setPresenceState(PresenceState::NOTHING);
   }
-
-  // TODO: 
-  // - Do not decrement uniqueSamples if Energy is 100%!
-  // - Make the pool of uniqueSamples a single pool
-  // - adjust the size of this pool with the filter
-  // - Decrease the required energy level for lowest setting (as it was)
 
   // Maintain the watchdog
   wdt.reset();
