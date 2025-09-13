@@ -42,7 +42,6 @@ enum class PresenceState {
   NOTHING = 3,
   UNKNOWN = 5,
 };
-PresenceState currentState;
 PresenceState previousState;
 
 // Visual feedback
@@ -116,46 +115,69 @@ bool isStickyRelaysMode()
   return false;
 }
 
+void updateZoneLeds()
+{
+  switch( previousState ){
+      case PresenceState::CLOSE   : 
+        if( deviceState.getLedMode() != LedMode::OFF ){ // Do not tutn on, if LEDs are off
+          deviceState.setPixels(50,50,50,7,1);
+        }
+        
+        if( isStickyRelaysMode() ){
+          if( deviceState.getLedMode() != LedMode::OFF ){ // Do not tutn on, if LEDs are off
+            deviceState.setPixels(50,50,50,6,1);
+          }
+        } else {
+          deviceState.setPixels(0,0,0,6,1);
+        }
+        break;
+      case PresenceState::NEAR    : 
+        deviceState.setPixels(0,0,0,7,1);
+        if( deviceState.getLedMode() != LedMode::OFF ){ // Do not tutn on, if LEDs are off
+          deviceState.setPixels(50,50,50,6,1);
+        }
+        break;
+      case PresenceState::DISTANT :
+        deviceState.setPixels(0,0,0,6,2);
+        break;
+      case PresenceState::NOTHING :
+        deviceState.setPixels(0,0,0,6,2);
+        break;
+    }
+}
+
 void setPresenceState( PresenceState newState ){
   if( previousState != newState )
   {
     switch( newState ){
       case PresenceState::CLOSE   : 
         digitalWrite(RELAY_OUT1_PIN, HIGH);
-        deviceState.setPixels(50,50,50,7,1);
-        
         if( isStickyRelaysMode() ){
           digitalWrite(RELAY_OUT2_PIN, HIGH);
-          deviceState.setPixels(50,50,50,6,1);
         } else {
           digitalWrite(RELAY_OUT2_PIN, LOW);
-          deviceState.setPixels(0,0,0,6,1);
         }
-        
         Logger::print(F("CLOSE!"));
         break;
       case PresenceState::NEAR    : 
         digitalWrite(RELAY_OUT1_PIN, LOW);
         digitalWrite(RELAY_OUT2_PIN, HIGH);
-        deviceState.setPixels(0,0,0,7,1);
-        deviceState.setPixels(50,50,50,6,1);
         Logger::print(F("NEAR!"));
         break;
       case PresenceState::DISTANT :
         digitalWrite(RELAY_OUT1_PIN, LOW);
         digitalWrite(RELAY_OUT2_PIN, LOW);
-        deviceState.setPixels(0,0,0,6,2);
         Logger::print(F("DISTANT!"));
         break;
       case PresenceState::NOTHING :
         digitalWrite(RELAY_OUT1_PIN, LOW);
         digitalWrite(RELAY_OUT2_PIN, LOW);
-        deviceState.setPixels(0,0,0,6,2);
         Logger::print(F("NOTHING!"));
         break;
     }
     previousState = newState;
   }
+  updateZoneLeds();
 }
 
 /**  None of these are required as they will be handled by the library with defaults. **
@@ -490,6 +512,7 @@ void sendBleDebug( int distance, int firstRange, int secondRange, int energy, un
 void gotoNextPrecisionMode()
 {
   Logger::print(F("gotoNextPrecisionMode"));
+  deviceState.setPixels(0,0,0,0,NEOPIXEL_COUNT);
   switch( deviceState.getDeviceMode() )
   {
     case DeviceMode::DEFAULT_SLOW : deviceState.setDeviceMode( DeviceMode::DEFAULT_MEDIUM ); break;
@@ -503,11 +526,13 @@ void gotoNextPrecisionMode()
   updateSampleSpeed();
   setPresenceState(previousState);
   deviceState.showActiveDeviceMode();
+  updateZoneLeds();
 }
 
 void gotoNextLedMode()
 {
   Logger::print(F("gotoNextLedMode"));
+  deviceState.setPixels(0,0,0,0,NEOPIXEL_COUNT);
   switch( deviceState.getLedMode() )
   {
     case LedMode::TRAFFIC_LIGHT: deviceState.setLedMode( LedMode::IMPERIAL ); break;
@@ -516,6 +541,7 @@ void gotoNextLedMode()
     default: deviceState.setLedMode( LedMode::TRAFFIC_LIGHT ); break;
   }
   deviceState.showActiveLedMode();
+  updateZoneLeds();
 }
 
 void gotoPreviousLedMode()
