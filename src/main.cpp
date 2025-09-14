@@ -26,7 +26,7 @@
 #define RELAY_OUT1_PIN 6
 #define RELAY_OUT2_PIN 7
 #define NEOPIXEL_PIN 3
-#define BOOT_PIN 9 // Never use apart from booting?
+#define BOOT_ESP_PIN 9 // Never use apart from booting?
 #define RADAR_OUT_PIN 10
 #define RADAR_RX_PIN 21
 #define RADAR_TX_PIN 20
@@ -266,6 +266,8 @@ void setupOutputs()
   digitalWrite(RELAY_OUT1_PIN, LOW);
   digitalWrite(RELAY_OUT2_PIN, LOW);
   digitalWrite(LED_PIN, HIGH);
+  pinMode(RADAR_RX_PIN, INPUT);
+  pinMode(RADAR_TX_PIN, OUTPUT);
 }
 
 void updateBluetoothTurnoffTime()
