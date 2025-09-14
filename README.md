@@ -2,6 +2,10 @@
 
 Open source Radsense1 firmware for use with PlatformIO IDE and VSCode. Get the [hardware from Maketronics](https://maketronics.no/radsense-1/). Also available for the [Arduino IDE](https://github.com/jenschr/Radsense-1). Learn more about the device and [how to program it with PlatformIO](https://maketronics.no/support/radsense-1-with-platformio/) on [the Maketronics support pages](https://maketronics.no/support/).
 
+## Release v1.72
+
+- Solves a bug that only applies to the Arduino IDE by setting pinMode for the RX/TX pins used to talk to the radar. It looks like Arduino-esp32 no longer does this by default, so we must ensure that it's set.
+
 ## Release v1.71
 
 - Fix stuck mode where target walks off to the side
