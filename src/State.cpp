@@ -1,7 +1,7 @@
 #include "State.h"
 
 State::State(){
-    _activeLedMode = LedMode::TRAFFIC_LIGHT;
+    _activeLedMode = LedMode::METRIC;
     _activeDeviceMode = DeviceMode::DEFAULT_MEDIUM;
     currentAnimation = AnimationType::NONE;
 }
@@ -152,8 +152,8 @@ void State::getLedModeAsString( char * mode )
 {
   switch (_activeLedMode)
   {
-    case LedMode::OFF : sprintf(mode,"OFF"); break;
-    case LedMode::TRAFFIC_LIGHT: sprintf(mode,"Traffic light"); break;
+    case LedMode::OFF : sprintf(mode,"Off"); break;
+    case LedMode::METRIC: sprintf(mode,"Metric"); break;
     case LedMode::IMPERIAL: sprintf(mode,"Imperial"); break;
     default: sprintf(mode,"Unknown"); break;
   }
@@ -231,9 +231,9 @@ void State::getDeviceModeAsString( char * mode )
     case DeviceMode::DEFAULT_SLOW: sprintf(mode,"Slow"); break;
     case DeviceMode::DEFAULT_MEDIUM: sprintf(mode,"Medium"); break;
     case DeviceMode::DEFAULT_FAST: sprintf(mode,"Fast"); break;
-    case DeviceMode::BOTH_SLOW: sprintf(mode,"Slow+Sticky"); break;
-    case DeviceMode::BOTH_MEDIUM: sprintf(mode,"Medium+Sticky"); break;
-    case DeviceMode::BOTH_FAST: sprintf(mode,"Fast+Sticky"); break;
+    case DeviceMode::BOTH_SLOW: sprintf(mode,"SlowSticky"); break;
+    case DeviceMode::BOTH_MEDIUM: sprintf(mode,"MediumSticky"); break;
+    case DeviceMode::BOTH_FAST: sprintf(mode,"FastSticky"); break;
     default: sprintf(mode,"Unknown"); break;
   }
 }
@@ -326,9 +326,9 @@ LedMode State::intToLedMode( int state )
   switch( state )
   {
     case 0: return LedMode::OFF;
-    case 1: return LedMode::TRAFFIC_LIGHT;
+    case 1: return LedMode::METRIC;
     case 2: return LedMode::IMPERIAL;
-    default: return LedMode::TRAFFIC_LIGHT;
+    default: return LedMode::METRIC;
   }
 }
 

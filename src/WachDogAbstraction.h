@@ -19,7 +19,7 @@ class WatchDogAbstraction {
         {
             // intentionally empty
         }
-        void begin( int secondsUntilReset ){
+        void begin( uint32_t secondsUntilReset ){
             if(!isStarted){
                 #if ESP_ARDUINO_VERSION >= ESP_ARDUINO_VERSION_VAL(3, 0, 0)
                     esp_task_wdt_config_t twdt_config = {
@@ -27,10 +27,11 @@ class WatchDogAbstraction {
                         .idle_core_mask = (1 << CONFIG_FREERTOS_NUMBER_OF_CORES) - 1,    // Bitmask of all cores
                         .trigger_panic = true,
                     };
+                    esp_task_wdt_init(&twdt_config); //enable panic so ESP32 restarts
                 #else
                     esp_task_wdt_init(secondsUntilReset, true); //enable panic so ESP32 restarts
-                    esp_task_wdt_add(NULL); //add current thread to WDT watch
                 #endif
+                esp_task_wdt_add(NULL); //add current thread to WDT watch
                 isStarted = true;
             }
             

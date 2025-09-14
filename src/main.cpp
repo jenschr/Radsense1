@@ -1,4 +1,3 @@
-
 #include <Arduino.h>
 #include <Wire.h>
 #include <NimBLEDevice.h>
@@ -8,13 +7,15 @@
 #include "Logger.h"
 #include "WachDogAbstraction.h"
 
-#define SERVICE_UUID        "b71eb828-6e9a-4db3-b11b-0ea799461a10"
-#define CHARACTERISTIC_UUID "825fdfcc-9771-11ee-b11b-0ea799461a10"
+#define SERVICE_UUID         "b71eb828-6e9a-4db3-b11b-0ea799461a10"
+#define CHARACTERISTIC_UUID  "825fdfcc-9771-11ee-b11b-0ea799461a10"
 #define CHARACTERISTIC_UUID2 "825fdfcc-9771-11ee-b11b-0ea799461a11"
+#define CHARACTERISTIC_UUID3 "825fdfcc-9771-11ee-b11b-0ea799461a12"
+#define MTU_SIZE 100
 
 #define FIRMWARE_VERSION 1.71
 #define RADAR_SERIAL Serial1
-#define WDT_TIMEOUT 60
+#define WDT_TIMEOUT 15
 
 #define SCL_PIN 1
 #define SDA_PIN 0
@@ -42,15 +43,16 @@ enum class PresenceState {
   NOTHING = 3,
   UNKNOWN = 5,
 };
-PresenceState previousState;
+PresenceState currentState;
 
 // Visual feedback
 State deviceState;
 
 // BLE
 BLEServer* pServer = NULL;
-BLECharacteristic* pCharacteristicDebug = NULL;
+BLECharacteristic* pCharacteristicData = NULL;
 BLECharacteristic* pCharacteristicSettings = NULL;
+BLECharacteristic* pCharacteristicDebug = NULL;
 bool deviceConnected = false;
 bool oldDeviceConnected = false;
 bool bleOutputEnabled = false;
@@ -117,7 +119,7 @@ bool isStickyRelaysMode()
 
 void updateZoneLeds()
 {
-  switch( previousState ){
+  switch( currentState ){
       case PresenceState::CLOSE   : 
         if( deviceState.getLedMode() != LedMode::OFF ){ // Do not tutn on, if LEDs are off
           deviceState.setPixels(50,50,50,7,1);
@@ -147,7 +149,7 @@ void updateZoneLeds()
 }
 
 void setPresenceState( PresenceState newState ){
-  if( previousState != newState )
+  if( currentState != newState )
   {
     switch( newState ){
       case PresenceState::CLOSE   : 
@@ -175,20 +177,24 @@ void setPresenceState( PresenceState newState ){
         Logger::print(F("NOTHING!"));
         break;
     }
-    previousState = newState;
+    currentState = newState;
   }
   updateZoneLeds();
 }
 
 /**  None of these are required as they will be handled by the library with defaults. **
  **                       Remove as you see fit for your needs                        */  
-class MyServerCallbacks: public BLEServerCallbacks {
-    void onConnect(BLEServer* pServer) {
+class MyServerCallbacks: public NimBLEServerCallbacks {
+    void onConnect(NimBLEServer* pServer, NimBLEConnInfo& connInfo) {
       deviceConnected = true;
+      Logger::print(F("Client connected"));
     };
 
-    void onDisconnect(BLEServer* pServer) {
+    void onDisconnect(NimBLEServer* pServer, NimBLEConnInfo& connInfo, int reason) {
       deviceConnected = false;
+      bleOutputEnabled = false;
+      BLEDevice::stopAdvertising();
+      Logger::print(F("Client disconnected"));
     }
 /***************** New - Security handled here ********************
 ****** Note: these are the same return values as defaults ********/
@@ -213,18 +219,18 @@ class MyServerCallbacks: public BLEServerCallbacks {
 void setupBluetooth()
 {
   // Create the BLE Device
-  BLEDevice::init("RadSense1 Maketronics");
-  BLEDevice::setMTU(100);
-
+  BLEDevice::init("RadSense1");
+  BLEDevice::setMTU(MTU_SIZE);
+  
   // Create the BLE Server
   pServer = BLEDevice::createServer();
   pServer->setCallbacks(new MyServerCallbacks());
 
   // Create the BLE Service
-  BLEService *pService = pServer->createService(SERVICE_UUID);
+  NimBLEService*        pService = pServer->createService("F00D");
   
   // Create a BLE Characteristic
-  pCharacteristicDebug = pService->createCharacteristic(
+  pCharacteristicData = pService->createCharacteristic(
                       CHARACTERISTIC_UUID,
                       NIMBLE_PROPERTY::NOTIFY
                     );
@@ -234,15 +240,19 @@ void setupBluetooth()
                       NIMBLE_PROPERTY::NOTIFY
                     );
 
+  pCharacteristicDebug = pService->createCharacteristic(
+                      CHARACTERISTIC_UUID3,
+                      NIMBLE_PROPERTY::NOTIFY
+                    );
+
   // Start the service
   pService->start();
 
   // Start advertising
   BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
-  pAdvertising->addServiceUUID(SERVICE_UUID);
-  pAdvertising->setScanResponse(false);
-  /** Note, this could be left out as that is the default value */
-  pAdvertising->setMinPreferred(0x0);  // set value to 0x00 to not advertise this parameter
+  pAdvertising->setName("Radsense1");
+  pAdvertising->addServiceUUID(pService->getUUID());
+  pAdvertising->enableScanResponse(false);
 }
 
 void setupOutputs()
@@ -315,6 +325,18 @@ void animateRgbLeds()
   }
 }
 
+void getPresenceStateAsString( char * str, PresenceState state )
+{
+  switch (state)
+  {
+    case PresenceState::CLOSE: sprintf(str,"CLOSE"); break;
+    case PresenceState::NEAR: sprintf(str,"NEAR"); break;
+    case PresenceState::DISTANT: sprintf(str,"DISTANT"); break;
+    case PresenceState::NOTHING: sprintf(str,"NOTHING"); break;
+    default: sprintf(str,"UNKNOWN"); break;
+  }
+}
+
 void setup(void)
 {
   deviceState.begin(NEOPIXEL_PIN, NEOPIXEL_COUNT);
@@ -359,13 +381,17 @@ void setup(void)
   else
   {
     Logger::print(F("not connected"));
+    int blinks = 0;
     while(1){
       deviceState.setPixels(255,0,0);
       delay(200);
       deviceState.setPixels(0,0,0);
       delay(200);
-      // Maintain the watchdog
-      esp_task_wdt_reset();
+      // Maintain the watchdog only for the first 20 blinks
+      if( blinks > 20){
+        esp_restart();
+      }
+      blinks++;
     }
   }
 
@@ -463,38 +489,44 @@ void sendBleDebug( int distance, int firstRange, int secondRange, int energy, un
     if( now > nextDebugOutput){
       nextDebugOutput += 100;
       const int bleStringLength = BLEDevice::getMTU();
-      char toSend[100];
+      char toSendInfo[MTU_SIZE];
       if( deviceState.getLedMode() == LedMode::IMPERIAL )
       {
         int firstRangeIn = round((float)firstRange * MM_TO_IN);
         int secondRangeIn = round((float)secondRange * MM_TO_IN);
         int distanceIn = round((float)distance * MM_TO_IN);
-        sprintf(toSend, "Zone1 %din, Zone2 %din, \nDetect %din, e:%d", firstRangeIn,secondRangeIn,distanceIn, energy);
+        sprintf(toSendInfo, "Zone1 %din, Zone2 %din, D %din", firstRangeIn,secondRangeIn,distanceIn);
       }
       else
       {
-        sprintf(toSend, "Zone1 %dcm, Zone2 %dcm, \nDetect %dcm, e:%d", firstRange,secondRange,distance, energy);
+        sprintf(toSendInfo, "Zone1 %dcm\nZone2 %dcm\nDetect %dcm\nEnergy:%d", firstRange,secondRange,distance,energy);
       }
-      pCharacteristicDebug->setValue(toSend);
-      pCharacteristicDebug->notify();
+      pCharacteristicData->setValue(toSendInfo);
+      pCharacteristicData->notify();
     }
 
     // Once every second, we'll also send out the current device settings as a
     // different characteristic
     if( now > nextSettingsOutput){
       nextSettingsOutput += 1000;
-      char toSendSettings[100];
+      char toSendSettings[MTU_SIZE];
       char deviceMode[20];
       deviceState.getDeviceModeAsString(deviceMode);
       char ledMode[20];
       deviceState.getLedModeAsString(ledMode);
       char filterMode[20];
       deviceState.getFilterModeAsString(filterMode);
-      sprintf(toSendSettings, "Device: %s\nLed: %s\nFilter: %s\nDetected: %d\nPerSecond: %d\nPerMinute: %d", deviceMode, ledMode, filterMode, previousState, uniqueSamplesPerSecond, uniqueSamplesPerMinute);
+      char stateAsString[20];
+      getPresenceStateAsString(stateAsString, currentState);
+      sprintf(toSendSettings, "Mode %s\nLed %s\nFilter %s\nPresence: %s", deviceMode, ledMode, filterMode, stateAsString);
       pCharacteristicSettings->setValue(toSendSettings);
       pCharacteristicSettings->notify();
+
+      char toSendDebug[MTU_SIZE];
+      sprintf(toSendDebug, "PerSec:%d\nPerMin: %d", currentState, uniqueSamplesPerSecond, uniqueSamplesPerMinute);
+      pCharacteristicDebug->setValue(toSendDebug);
+      pCharacteristicDebug->notify();
     }
-    
   }
   // disconnecting
   if (!deviceConnected && oldDeviceConnected) {
@@ -524,7 +556,7 @@ void gotoNextPrecisionMode()
     default : deviceState.setDeviceMode( DeviceMode::DEFAULT_SLOW ); break;
   }
   updateSampleSpeed();
-  setPresenceState(previousState);
+  setPresenceState(currentState);
   deviceState.showActiveDeviceMode();
   updateZoneLeds();
 }
@@ -535,10 +567,10 @@ void gotoNextLedMode()
   deviceState.setPixels(0,0,0,0,NEOPIXEL_COUNT);
   switch( deviceState.getLedMode() )
   {
-    case LedMode::TRAFFIC_LIGHT: deviceState.setLedMode( LedMode::IMPERIAL ); break;
+    case LedMode::METRIC: deviceState.setLedMode( LedMode::IMPERIAL ); break;
     case LedMode::IMPERIAL:      deviceState.setLedMode( LedMode::OFF ); deviceState.setPixels(0,0,0,0,NEOPIXEL_COUNT); break;
-    case LedMode::OFF:           deviceState.setLedMode( LedMode::TRAFFIC_LIGHT ); break;
-    default: deviceState.setLedMode( LedMode::TRAFFIC_LIGHT ); break;
+    case LedMode::OFF:           deviceState.setLedMode( LedMode::METRIC ); break;
+    default: deviceState.setLedMode( LedMode::METRIC ); break;
   }
   deviceState.showActiveLedMode();
   updateZoneLeds();
@@ -550,10 +582,10 @@ void gotoPreviousLedMode()
   Logger::print(F("gotoPreviousLedMode"));
   switch( deviceState.getLedMode() )
   {
-    case LedMode::TRAFFIC_LIGHT: deviceState.setLedMode( LedMode::OFF ); break;
-    case LedMode::IMPERIAL:      deviceState.setLedMode( LedMode::TRAFFIC_LIGHT ); break;
+    case LedMode::METRIC: deviceState.setLedMode( LedMode::OFF ); break;
+    case LedMode::IMPERIAL:      deviceState.setLedMode( LedMode::METRIC ); break;
     case LedMode::OFF:           deviceState.setLedMode( LedMode::IMPERIAL ); break;
-    default: deviceState.setLedMode( LedMode::TRAFFIC_LIGHT ); break;
+    default: deviceState.setLedMode( LedMode::METRIC ); break;
   }
 }
 
@@ -566,7 +598,7 @@ void gotoNextFilterMode()
     case FilterMode::WEAK: deviceState.setFilterMode( FilterMode::MEDIUM ); break;
     case FilterMode::MEDIUM: deviceState.setFilterMode( FilterMode::STRONG ); break;
     case FilterMode::STRONG: deviceState.setFilterMode( FilterMode::WEAK ); break;
-    default: deviceState.setLedMode( LedMode::TRAFFIC_LIGHT ); break;
+    default: deviceState.setLedMode( LedMode::METRIC ); break;
   }
   updateFilter();
   deviceState.showActiveFilterMode();
@@ -761,7 +793,7 @@ int findUniqueSamplesPerMinute( unsigned long int time, int currentValue )
     // If we're not detecting anything, there's no need to count unique samples
     // This solves a bug that might cause a non-detect period on initial detect
     // and also improves response time.
-    if( previousState == PresenceState::NOTHING && uniqueSamplesPerSecond > 1 ){
+    if( currentState == PresenceState::NOTHING && uniqueSamplesPerSecond > 1 ){
       uniqueSamplesPerSecond = 0;
     }
 
@@ -841,7 +873,7 @@ void readTheRadar( unsigned long now )
 void loop()
 {
   // Always update the LED based on current state
-  int subState = static_cast<int>(previousState);
+  int subState = static_cast<int>(currentState);
   if( !deviceState.animating()){
     deviceState.setLedSubMode(subState);
   } else {

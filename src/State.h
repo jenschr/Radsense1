@@ -10,7 +10,7 @@
 // Also update intToLedMode-function if changed!
 enum class LedMode {
   OFF = 0, // Turn LED off
-  TRAFFIC_LIGHT = 1, // RYG
+  METRIC = 1, // RYG
   IMPERIAL = 2, // RWB
 };
 
